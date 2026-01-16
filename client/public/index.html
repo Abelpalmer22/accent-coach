@@ -1,0 +1,145 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Accent Coach MVP</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 24px; max-width: 900px; }
+      button { margin-right: 8px; padding: 8px 12px; }
+      pre { background: #f6f6f6; padding: 12px; border-radius: 8px; overflow: auto; }
+      .row { display: flex; gap: 24px; align-items: flex-start; }
+      .col { flex: 1; }
+      .words span { display: inline-block; padding: 4px 6px; margin: 2px; border: 1px solid #ddd; border-radius: 6px; }
+      #status { margin-left: 8px; }
+    </style>
+  </head>
+  <body>
+    <h1>Accent Coach MVP</h1>
+
+    <div>
+      <button id="start">Start recording</button>
+      <button id="stop" disabled>Stop & analyze</button>
+      <span id="status"></span>
+    </div>
+
+    <div class="row" style="margin-top: 16px;">
+      <div class="col">
+        <h3>Transcript</h3>
+        <div id="transcript">(none yet)</div>
+
+        <h3>Words</h3>
+        <div class="words" id="words"></div>
+      </div>
+
+      <div class="col">
+        <h3>Raw JSON</h3>
+        <pre id="json">{}</pre>
+      </div>
+    </div>
+
+    <script>
+      // IMPORTANT: update this if you change ports
+      const API_URL = "http://127.0.0.1:8000/analyze";
+
+      const startBtn = document.getElementById("start");
+      const stopBtn = document.getElementById("stop");
+      const statusEl = document.getElementById("status");
+      const transcriptEl = document.getElementById("transcript");
+      const wordsEl = document.getElementById("words");
+      const jsonEl = document.getElementById("json");
+
+      let mediaRecorder = null;
+      let chunks = [];
+
+      async function startRecording() {
+        chunks = [];
+        statusEl.textContent = "Requesting mic…";
+
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+        // Safari can be picky; "audio/webm" works on Chrome, often not Safari.
+        // We'll try a few MIME types.
+        const mimeTypes = [
+          "audio/webm;codecs=opus",
+          "audio/webm",
+          "audio/mp4",
+        ];
+        let chosenMime = "";
+        for (const m of mimeTypes) {
+          if (MediaRecorder.isTypeSupported(m)) { chosenMime = m; break; }
+        }
+
+        mediaRecorder = chosenMime
+          ? new MediaRecorder(stream, { mimeType: chosenMime })
+          : new MediaRecorder(stream);
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) chunks.push(e.data);
+        };
+
+        mediaRecorder.onstart = () => {
+          statusEl.textContent = "Recording…";
+          startBtn.disabled = true;
+          stopBtn.disabled = false;
+        };
+
+        mediaRecorder.onstop = async () => {
+          statusEl.textContent = "Uploading…";
+
+          const blobType = chosenMime || "audio/webm";
+          const blob = new Blob(chunks, { type: blobType });
+
+          const form = new FormData();
+          form.append("file", blob, "recording");
+
+          try {
+            const resp = await fetch(API_URL, { method: "POST", body: form });
+            const data = await resp.json();
+
+            jsonEl.textContent = JSON.stringify(data, null, 2);
+            transcriptEl.textContent = data.transcript ?? "(missing transcript)";
+            wordsEl.innerHTML = "";
+
+            (data.words ?? []).forEach(w => {
+              const s = document.createElement("span");
+              s.textContent = `${w.text} [${w.start_ms}-${w.end_ms}ms]`;
+              wordsEl.appendChild(s);
+            });
+
+            statusEl.textContent = "Done.";
+          } catch (err) {
+            console.error(err);
+            statusEl.textContent = "Error (open DevTools console).";
+          } finally {
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+          }
+        };
+
+        mediaRecorder.start();
+      }
+
+      function stopRecording() {
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+          statusEl.textContent = "Stopping…";
+          mediaRecorder.stop();
+        }
+      }
+
+      startBtn.addEventListener("click", startRecording);
+      stopBtn.addEventListener("click", stopRecording);
+    </script>
+  </body>
+</html>
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Accent Coach MVP</title>
+  </head>
+  <body>
+    <h1>Accent Coach MVP</h1>
+    <p>If you can read this, the client is being served correctly.</p>
+  </body>
+</html>
+
